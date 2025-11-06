@@ -1,7 +1,7 @@
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
-from model_config import get_llm_with_fallback
+from model_config import get_openrouter_llm
 from tools import web_search 
 from langgraph.checkpoint.memory import InMemorySaver  
 
@@ -9,8 +9,8 @@ def build_agent(api_key=None):
     """
     Builds a agent using modern LangChain create_agent.
     """
-    # 1. Initialize the model with fallback and API key
-    model = get_llm_with_fallback(api_key)
+    # 1. Initialize the model with API key
+    model = get_openrouter_llm(api_key)
     
     # 2. Gather all tools
     tools = [

@@ -2,25 +2,21 @@ from langchain_openai import ChatOpenAI
 import os
 from langchain_ollama import ChatOllama
 
-
 def get_openrouter_llm(api_key=None):
-    """Get OpenRouter LLM instance"""
-    # Get API key from parameter, environment, or raise error
-    openrouter_api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+    """Get OpenRouter LLM instance with direct API key input"""
+    if not api_key:
+        raise ValueError("API key is required for OpenRouter")
+    
     base_url = "https://openrouter.ai/api/v1"
     model_name = "nvidia/nemotron-nano-12b-v2-vl:free"
     
-    if not openrouter_api_key:
-        raise ValueError("OpenRouter API key not found. Please provide an API key.")
-    
-    # Set both environment variables to be safe
-    os.environ["OPENAI_API_KEY"] = openrouter_api_key
-    os.environ["OPENROUTER_API_KEY"] = openrouter_api_key
+    print(f"Using OpenRouter with model: {model_name}")
+    print(f"API Key: {api_key[:10]}...")
     
     return ChatOpenAI(
         model=model_name,
         temperature=0.3,
-        api_key=openrouter_api_key,  # Use api_key parameter
+        openai_api_key=api_key,
         base_url=base_url,
         max_tokens=2048,
     )
