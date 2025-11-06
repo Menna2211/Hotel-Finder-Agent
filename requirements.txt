@@ -1,0 +1,12 @@
+langchain
+langchain-core
+langchain-community
+gradio
+python-dotenv
+ollama
+requests
+langchain-openai
+langgraph
+langgraph-prebuilt
+langchain-ollama
+streamlit
