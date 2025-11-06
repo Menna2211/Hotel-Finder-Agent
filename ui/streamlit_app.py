@@ -4,19 +4,29 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import streamlit as st
 from agents import build_agent
+from model_config import get_openrouter_llm, get_ollama_llm
 from langchain_core.messages import HumanMessage, AIMessage
 
-# Initialize the agent with caching - include API key in cache key
+# Initialize the agent with caching
 @st.cache_resource
 def load_agent(openrouter_key=None):
-    if openrouter_key:
-        os.environ["OPENROUTER_API_KEY"] = openrouter_key
-        os.environ["OPENAI_API_KEY"] = openrouter_key
-    return build_agent(api_key=openrouter_key)
+    """Load agent with the provided API key"""
+    try:
+        if openrouter_key:
+            # Set environment variable
+            os.environ["OPENROUTER_API_KEY"] = openrouter_key
+            os.environ["OPENAI_API_KEY"] = openrouter_key
+        return build_agent(api_key=openrouter_key)
+    except Exception as e:
+        st.error(f"Failed to load agent: {e}")
+        return None
 
 def chat_with_agent(user_input):
     """Send user message to agent and extract only the final AI reply."""
     try:
+        if agent is None:
+            return "Agent not initialized. Please check your API key."
+            
         response = agent.invoke(
             {"messages": [HumanMessage(content=user_input)]},
             {"configurable": {"thread_id": "1"}}
@@ -53,21 +63,32 @@ with st.sidebar:
         key="api_key_input"
     )
     
-    # Test connection button
-    if st.button("Test Connection"):
+    # Store API key in session state when entered
+    if openrouter_key:
+        st.session_state.openrouter_key = openrouter_key
+        st.success("✅ API Key saved! Click 'Initialize Agent' to start.")
+    
+    # Initialize Agent button
+    if st.button("Initialize Agent"):
         if openrouter_key:
-            try:
-                test_agent = build_agent(api_key=openrouter_key)
-                test_response = test_agent.invoke(
-                    {"messages": [HumanMessage(content="Hello")]},
-                    {"configurable": {"thread_id": "test"}}
-                )
-                st.success("✅ Connection successful! You can start chatting.")
-                st.session_state.openrouter_key = openrouter_key
-                st.session_state.connection_tested = True
-            except Exception as e:
-                st.error(f"❌ Connection failed: {str(e)}")
-                st.session_state.connection_tested = False
+            with st.spinner("Initializing agent..."):
+                try:
+                    # Clear any existing agent from cache
+                    load_agent.clear()
+                    
+                    # Initialize new agent
+                    global agent
+                    agent = load_agent(openrouter_key)
+                    
+                    if agent:
+                        st.session_state.agent_initialized = True
+                        st.success("✅ Agent initialized successfully!")
+                    else:
+                        st.session_state.agent_initialized = False
+                        st.error("❌ Failed to initialize agent")
+                except Exception as e:
+                    st.error(f"❌ Initialization failed: {str(e)}")
+                    st.session_state.agent_initialized = False
         else:
             st.warning("⚠️ Please enter an API key first")
     
@@ -78,11 +99,14 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
     
-    if st.button("Reset API Key"):
+    if st.button("Reset Agent"):
         if "openrouter_key" in st.session_state:
             del st.session_state.openrouter_key
-        if "connection_tested" in st.session_state:
-            del st.session_state.connection_tested
+        if "agent_initialized" in st.session_state:
+            del st.session_state.agent_initialized
+        if "messages" in st.session_state:
+            del st.session_state.messages
+        load_agent.clear()
         st.rerun()
     
     st.markdown("---")
@@ -106,29 +130,25 @@ with st.sidebar:
     st.subheader("Current Settings")
     if "openrouter_key" in st.session_state:
         st.code(f"API Key: {st.session_state.openrouter_key[:10]}...")
-        st.code(f"Status: {'✅ Connected' if st.session_state.get('connection_tested') else '❓ Not tested'}")
+        st.code(f"Agent: {'✅ Initialized' if st.session_state.get('agent_initialized') else '❓ Not initialized'}")
     else:
         st.code("API Key: Not set")
+
+# Initialize global agent variable
+agent = None
 
 # Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Initialize agent only if API key is provided and tested
-if ("openrouter_key" in st.session_state and 
-    st.session_state.get("connection_tested")):
+# Initialize agent from session state
+if (st.session_state.get("agent_initialized") and 
+    st.session_state.get("openrouter_key")):
     try:
         agent = load_agent(st.session_state.openrouter_key)
-        agent_ready = True
     except Exception as e:
-        st.error(f"❌ Failed to initialize agent: {str(e)}")
-        agent_ready = False
-else:
-    agent_ready = False
-    if "openrouter_key" in st.session_state and not st.session_state.get("connection_tested"):
-        st.info("🔑 Please test your API key connection in the sidebar")
-    else:
-        st.info("🔑 Please enter and test your OpenRouter API key in the sidebar")
+        st.error(f"❌ Failed to load agent: {str(e)}")
+        st.session_state.agent_initialized = False
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
@@ -136,7 +156,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # React to user input only if agent is ready
-if agent_ready:
+if st.session_state.get("agent_initialized") and agent:
     if prompt := st.chat_input("Ask about hotels, e.g., 'Find 4-star hotels in Paris'"):
         # Display user message in chat message container
         st.chat_message("user").markdown(prompt)
@@ -153,4 +173,8 @@ if agent_ready:
         # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response})
 else:
-    st.chat_input("Configure API key to enable chatting", disabled=True)
+    st.chat_input("Initialize agent in sidebar to start chatting", disabled=True)
+    if not st.session_state.get("openrouter_key"):
+        st.info("🔑 Please enter your OpenRouter API key in the sidebar")
+    elif not st.session_state.get("agent_initialized"):
+        st.info("🚀 Click 'Initialize Agent' in the sidebar to start chatting")
