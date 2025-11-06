@@ -6,12 +6,13 @@ import streamlit as st
 from agents import build_agent
 from langchain_core.messages import HumanMessage, AIMessage
 
-# Initialize the agent with caching
+# Initialize the agent with caching - include API key in cache key
 @st.cache_resource
 def load_agent(openrouter_key=None):
     if openrouter_key:
         os.environ["OPENROUTER_API_KEY"] = openrouter_key
-    return build_agent()
+        os.environ["OPENAI_API_KEY"] = openrouter_key
+    return build_agent(api_key=openrouter_key)
 
 def chat_with_agent(user_input):
     """Send user message to agent and extract only the final AI reply."""
@@ -48,23 +49,40 @@ with st.sidebar:
         "Enter your OpenRouter API Key:",
         type="password",
         placeholder="sk-or-v1-...",
-        help="Get your API key from https://openrouter.ai/keys"
+        help="Get your API key from https://openrouter.ai/keys",
+        key="api_key_input"
     )
     
-    # Store API key in session state
-    if openrouter_key:
-        st.session_state.openrouter_key = openrouter_key
-        st.success("✅ API Key saved!")
-    elif "openrouter_key" in st.session_state:
-        openrouter_key = st.session_state.openrouter_key
-    else:
-        st.warning("⚠️ Please enter your OpenRouter API key to start chatting")
+    # Test connection button
+    if st.button("Test Connection"):
+        if openrouter_key:
+            try:
+                test_agent = build_agent(api_key=openrouter_key)
+                test_response = test_agent.invoke(
+                    {"messages": [HumanMessage(content="Hello")]},
+                    {"configurable": {"thread_id": "test"}}
+                )
+                st.success("✅ Connection successful! You can start chatting.")
+                st.session_state.openrouter_key = openrouter_key
+                st.session_state.connection_tested = True
+            except Exception as e:
+                st.error(f"❌ Connection failed: {str(e)}")
+                st.session_state.connection_tested = False
+        else:
+            st.warning("⚠️ Please enter an API key first")
     
     st.markdown("---")
     st.header("Chat Controls")
     
     if st.button("Clear Chat History"):
         st.session_state.messages = []
+        st.rerun()
+    
+    if st.button("Reset API Key"):
+        if "openrouter_key" in st.session_state:
+            del st.session_state.openrouter_key
+        if "connection_tested" in st.session_state:
+            del st.session_state.connection_tested
         st.rerun()
     
     st.markdown("---")
@@ -88,6 +106,7 @@ with st.sidebar:
     st.subheader("Current Settings")
     if "openrouter_key" in st.session_state:
         st.code(f"API Key: {st.session_state.openrouter_key[:10]}...")
+        st.code(f"Status: {'✅ Connected' if st.session_state.get('connection_tested') else '❓ Not tested'}")
     else:
         st.code("API Key: Not set")
 
@@ -95,8 +114,9 @@ with st.sidebar:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Initialize agent only if API key is provided
-if "openrouter_key" in st.session_state and st.session_state.openrouter_key:
+# Initialize agent only if API key is provided and tested
+if ("openrouter_key" in st.session_state and 
+    st.session_state.get("connection_tested")):
     try:
         agent = load_agent(st.session_state.openrouter_key)
         agent_ready = True
@@ -105,7 +125,10 @@ if "openrouter_key" in st.session_state and st.session_state.openrouter_key:
         agent_ready = False
 else:
     agent_ready = False
-    st.info("🔑 Please enter your OpenRouter API key in the sidebar to start chatting")
+    if "openrouter_key" in st.session_state and not st.session_state.get("connection_tested"):
+        st.info("🔑 Please test your API key connection in the sidebar")
+    else:
+        st.info("🔑 Please enter and test your OpenRouter API key in the sidebar")
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
@@ -130,4 +153,4 @@ if agent_ready:
         # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response})
 else:
-    st.chat_input("Enter your OpenRouter API key in the sidebar to enable chatting", disabled=True)
+    st.chat_input("Configure API key to enable chatting", disabled=True)
